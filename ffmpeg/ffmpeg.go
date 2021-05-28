@@ -30,11 +30,12 @@ type Transcoder struct {
 	inputPipeWriter  *io.WriteCloser
 	outputPipeWriter *io.WriteCloser
 	commandContext   *context.Context
+	done             chan interface{}
 }
 
 // New ...
 func New(cfg *Config) transcoder.Transcoder {
-	return &Transcoder{config: cfg}
+	return &Transcoder{config: cfg, done: make(chan interface{})}
 }
 
 // Start ...
@@ -119,8 +120,9 @@ func (t *Transcoder) Start(opts transcoder.Options) (<-chan transcoder.Progress,
 		}()
 
 		go func() {
-			defer close(out)
 			err = cmd.Wait()
+			t.done <- true
+			close(out)
 		}()
 	} else {
 		err = cmd.Wait()
@@ -328,9 +330,17 @@ func (t *Transcoder) progress(stream io.ReadCloser, out chan transcoder.Progress
 			Progress.CurrentTime = currentTime
 			Progress.Speed = currentSpeed
 
+			select {
+			case <-t.done:
+				return
+			default:
+			}
+
 			out <- *Progress
 		}
 	}
+
+	close(out)
 }
 
 // closePipes Closes pipes if opened
