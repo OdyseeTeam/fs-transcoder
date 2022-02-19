@@ -224,7 +224,7 @@ func (t *Transcoder) GetMetadata() (transcoder.Metadata, error) {
 			input = "pipe:"
 		}
 
-		args := []string{"-i", input, "-print_format", "json", "-show_format", "-show_streams", "-show_error"}
+		args := []string{"-print_format", "json", "-show_format", "-show_streams", "-show_error", input}
 
 		cmd := exec.Command(t.config.FfprobeBinPath, args...)
 		cmd.Stdout = &outb
@@ -246,7 +246,7 @@ func (t *Transcoder) GetMetadata() (transcoder.Metadata, error) {
 		return metadata, nil
 	}
 
-	return nil, errors.New("ffprobe binary not found")
+	return nil, nil // errors.New("ffprobe binary not found")
 }
 
 // progress sends through given channel the transcoding status
