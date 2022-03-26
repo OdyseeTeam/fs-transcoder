@@ -38,6 +38,62 @@ func New(cfg *Config) transcoder.Transcoder {
 	return &Transcoder{config: cfg, done: make(chan interface{})}
 }
 
+func (t *Transcoder) StartCustom(opts transcoder.Options) (<-chan transcoder.Progress, error) {
+	var stderrIn io.ReadCloser
+
+	out := make(chan transcoder.Progress)
+
+	defer t.closePipes()
+
+	// Append input file and standard options
+	args := append([]string{}, opts.GetStrArguments()...)
+
+	// Initialize command
+	// If a context object was supplied to this Transcoder before
+	// starting, use this context when creating the command to allow
+	// the command to be killed when the context expires
+	var cmd *exec.Cmd
+	if t.commandContext == nil {
+		cmd = exec.Command(t.config.FfmpegBinPath, args...)
+	} else {
+		cmd = exec.CommandContext(*t.commandContext, t.config.FfmpegBinPath, args...)
+	}
+	cmd.Dir = t.config.OutputDir
+	var err error
+	// If progresss enabled, get stderr pipe and start progress process
+	if t.config.ProgressEnabled && !t.config.Verbose {
+		stderrIn, err = cmd.StderrPipe()
+		if err != nil {
+			return nil, fmt.Errorf("Failed getting transcoding progress (%s) with args (%s) with error %s", t.config.FfmpegBinPath, args, err)
+		}
+	}
+
+	if t.config.Verbose {
+		cmd.Stderr = os.Stdout
+	}
+
+	// Start process
+	err = cmd.Start()
+	if err != nil {
+		return nil, fmt.Errorf("Failed starting transcoding (%s) with args (%s) with error %s", t.config.FfmpegBinPath, args, err)
+	}
+	if t.config.ProgressEnabled && !t.config.Verbose {
+		go func() {
+			t.progress(stderrIn, out)
+		}()
+
+		go func() {
+			err = cmd.Wait()
+			t.done <- true
+			close(out)
+		}()
+	} else {
+		err = cmd.Wait()
+	}
+
+	return out, nil
+}
+
 // Start ...
 func (t *Transcoder) Start(opts transcoder.Options) (<-chan transcoder.Progress, error) {
 
@@ -55,7 +111,7 @@ func (t *Transcoder) Start(opts transcoder.Options) (<-chan transcoder.Progress,
 	// Get file metadata
 	_, err := t.GetMetadata()
 	if err != nil {
-		return nil, err
+		//return nil, err
 	}
 
 	// Append input file and standard options
